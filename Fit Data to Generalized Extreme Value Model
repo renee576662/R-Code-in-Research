@@ -1,0 +1,118 @@
+library(fExtremes)
+library(stats)
+library(FitARMA)
+library(numDeriv)
+library(ismev)
+library(stats4)
+library(bbmle)
+library(MASS)
+library(reliaR)
+
+e <- read.table("C:/Users/柳/Desktop/dd.txt", header=FALSE)
+e <- -e$V1
+n <- length(e)
+myacf <- acf(e, lag.max=40)
+
+#-----------------------------------------------
+#---------define gevcdf and gevpdf--------------
+#-----------------------------------------------
+
+gevcdf <- function(xi,alpha0,alpha1,i,beta,y)
+{
+	if(xi==0)
+	{
+    		gevcdf <- exp(-exp(-(y-alpha0-alpha1*i)/beta))
+	}
+	else    exp(-(1+(y-alpha0-alpha1*i)/beta*xi)^(-1/xi))
+}
+
+gevpdf <- function(xi,alpha0,alpha1,i,beta,y)
+{
+      if(xi==0)
+	{
+ 	      gevpdf <- 1/beta*exp(-(y-alpha0-alpha1*i)*(1+xi)/beta)*exp(-exp(-(y-alpha0-alpha1*i)/beta))
+	}
+	else    1/beta*(1+(y-alpha0-alpha1*i)/beta*xi)^((-1-xi)/xi)*exp(-(1+(y-alpha0-alpha1*i)/beta*xi)^(-1/xi))
+}
+
+#---------------------------------------------
+#-------build-in nlm function(-ini) (ARMA11)--
+#---------------------------------------------
+negll <- function(para)
+	{
+	      phi <- para[1]
+	      theta <- para[2]
+	      alpha0 <- para[3]
+      	alpha1 <- para[4]
+      	beta <- para[5]
+		xi <- para[6]
+   
+ 	      sigmasq <- (1-phi^2)/(1+theta^2+2*phi*theta) 
+	      r0 <- (1+2*theta*phi+theta^2)/(1-phi^2)    
+    		ini <- -n/2*log(sigmasq)-1/2*log(r0)-1/(2*sigmasq)*(qnorm(gevcdf(xi,alpha0,alpha1,1,beta,e[1])))^2/r0 + log(gevpdf(xi,alpha0,alpha1,1,beta,e[1])) + 1/2 * (qnorm(gevcdf(xi,alpha0,alpha1,1,beta,e[1])))^2
+        
+		r = r0
+		xh = 0
+		for (j in 2:n)
+			{
+   				xh <- (phi+theta/r)*qnorm(gevcdf(xi,alpha0,alpha1,j-1,beta,e[j-1]))-theta/r*xh
+				r = 1+theta^2 - theta^2/r
+				ini <- ini-1/2*log(r)-1/(2*sigmasq)*(qnorm(gevcdf(xi,alpha0,alpha1,j,beta,e[j]))-xh)^2/r + log(gevpdf(xi,alpha0,alpha1,j,beta,e[j])) + 1/2*(qnorm(gevcdf(xi,alpha0,alpha1,j,beta,e[j])))^2
+			}
+		-ini
+	}
+#--------------------------------------------------
+#----Estimates for assumed-independent gev seq-----
+#--------------------------------------------------
+ti=matrix(ncol=1,nrow=n)
+ti[,1]=seq(1,n,1)
+gevf <- gev.fit(e,ti,mul=1) # Directly fit a Gev distribution to e using MLE
+a0 <- gevf$mle[1]
+a1 <- gevf$mle[2]
+b <- gevf$mle[3]
+xii <- gevf$mle[4]
+
+#-----------------------------------------------
+#---------Estimates from likelihood-------------
+#-----------------------------------------------	
+out <- nlm(negll,para<-c(0.2, 0.2, a0, a1, b, xii), hessian=TRUE, print.level=1)      #optimization
+mlese <- sqrt(diag(ginv(out$hessian)))
+cat("For independent gev","\n", "std.err of alpho0=",gevf$se[1],"\n","std.err of alpha1=",gevf$se[2],"\n","std.err of beta=",gevf$se[3],"\n","std.err of xi=",gevf$se[4],"\n")
+cat("For dependent gev","\n", "std.err of phi=",mlese[1],"\n", "std.err of theta=", mlese[2], "\n", "std.err of alpho0=",mlese[3],"\n","std.err of alpha1=",mlese[4],"\n","std.err of beta=",mlese[5],"\n","std.err of xi=",mlese[6],"\n")   #generate standard error for phi, alpha0, alpha1, beta.
+cat("Ratio of Alpha0 SE:Dep/Indep=", mlese[3]/gevf$se[1],"\n")
+cat("Ratio of Alpha1 SE:Dep/Indep=", mlese[4]/gevf$se[2],"\n")
+cat("Ratio of beta SE:Dep/Indep=", mlese[5]/gevf$se[3],"\n")
+cat("Ratio of xi SE:Dep/Indep=", mlese[6]/gevf$se[4],"\n")
+
+bic <- 2*(out$minimum)+6*log(n)
+bic
+aic <- 12+2*out$minimum
+aicc <- aic + 2*(6+1)*(6+2)/(n-8) 
+aicc  
+
+phih <- out$estimate[1]
+theh <- out$estimate[2]
+a0h <- out$estimate[3]
+a1h <- out$estimate[4]
+bh <- out$estimate[5]
+xih <- out$estimate[6]
+
+sigh <- (1-phih^2)/(1+theh^2+2*phih*theh)
+xh <- SimulateGaussianARMA(phih,-theh,n, InnovationVariance=sigh)
+eh <- vector(length=n)
+for (k in 1:n)
+	{
+	    eh[k] <- qgev(pnorm(xh[k]), xi=xih, mu=a0h+a1h*k, beta=bh)                                                           
+	}
+r <- vector(length=n)
+for (i in 1:n)
+	{
+		r[i] <- eh[i]-e[i]
+	}
+r
+qqnorm(r)
+qqline(r)
+Box.test(r,type="Ljung")
+turning.point.test(r)
+difference.sign.test(r)
+
