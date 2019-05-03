@@ -1,0 +1,64 @@
+data <- read.table("C:/Users/柳/Dropbox/Research/final code/checkchangepoint/dd.txt",header=FALSE)
+temp <- data$V1
+colnames(data) <- "temp"
+n <- length(temp)
+t <- seq(1,n)
+linreg <- lm(temp~t,data=data)
+#plotResiduals(lm)
+eps_hat <- residuals(linreg)
+sigmahatsq <- sum(eps_hat^2)/(n-2)
+sigmahat <- sqrt(sigmahatsq)
+D_c <- numeric(n)
+D_c[1] <- eps_hat[1]/(sigmahat*sqrt(n))
+for (i in 2:n)
+{
+	D_c[i] <- D_c[i-1]+1/(sigmahat*sqrt(n))*eps_hat[i]
+}
+D <- max(abs(D_c))/sigmahat
+c_D <- which(D_c == max(D_c))
+if (D < 0.906){
+print("There's no changepoint.")
+} else {
+cat("There is a changepoint at: ",c_D)
+}
+
+#---------------
+#---Dh_star---
+#---------------
+
+Dh_star <- numeric(n)
+Dh_star[1] <- -Inf
+Dh_star[n] <- -Inf
+for (i in 2:(n-1))
+{
+	Dh_star[i] <- D_c[i]^2/(sigmahatsq*(i/n)*(1-i/n)*(1-3*i/n*(1-i/n)))
+}
+Dh_starmax <- max(Dh_star)
+c_Dh_star <- which(Dh_star == max(Dh_star))
+if (Dh_starmax < 11.956){
+print("There's no changepoint.")
+} else {
+cat("There is a changepoint at: ",c_Dh_star)
+}
+
+#---------------
+#---Dh_startilda---
+#---------------
+
+Dh_startilda <- numeric(n)
+Dh_startilda[1] <- -Inf
+Dh_startilda[n] <- -Inf
+for (i in 2:(n-1))
+{
+	Dh_startilda[i] <- D_c[i]^2/((i/n)*(1-i/n)*(1-3*i/n*(1-i/n)))
+}
+Dh_startildamax <- max(Dh_startilda)
+c_Dh_startilda <- which(Dh_startilda == max(Dh_startilda))
+if (Dh_startildamax < 11.956){
+print("There's no changepoint.")
+} else {
+cat("There is a changepoint at: ",c_Dh_startilda)
+}
+
+
+
